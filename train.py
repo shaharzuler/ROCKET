@@ -3,20 +3,16 @@ import pickle
 
 import pytorch_lightning as pl
 
+from ROCKET.DatasetHandler import DatasetHandler
 from model import RocketNet
 from utils import load_data
 
-N_CLASSES = 2
-KERNEL_COUNT = 100
-TRAIN_DATA_PATH = os.path.join("data", "FordA_TRAIN.csv")
-TEST_DATA_PATH = os.path.join("data", "FordA_TEST.csv")
+N_CLASSES = 1
+KERNEL_COUNT = 10000
+TRAIN_DATA_PATH = os.path.join("data", "FordA_TRAIN.tsv")
+TEST_DATA_PATH = os.path.join("data", "FordA_TEST.tsv")
 TRAINED_MODEL_PATH = os.path.join("trained_models")
 DATALOADERS_PATH = os.path.join("dataloaders")
-
-
-def make_dataloaders():
-    #TEMP. replace with dataloaders
-    pass
 
 
 def save_dataloaders():
@@ -32,17 +28,16 @@ def save_dataloaders():
 if __name__ == '__main__':
     df_train = load_data(TRAIN_DATA_PATH)
     df_test = load_data(TEST_DATA_PATH)
-
-    train_dataloader, val_dataloader = make_dataloaders()
+    max_sequence_len = 500
+    batch_size = 512
+    train_dataloader, val_dataloader = DatasetHandler(df_train, df_test, batch_size).load_dataset()
 
     save_dataloaders()
 
-    model = RocketNet(x_dim=20,
+    model = RocketNet(x_dim=1,
                       n_classes=N_CLASSES,
                       kernel_count=KERNEL_COUNT,
-                      max_sequence_len=100,
-                      kernel_lengths=[7, 9, 11])
-
+                      max_sequence_len=max_sequence_len)
 
     checkpoint_cb = pl.callbacks.ModelCheckpoint(
         dirpath=TRAINED_MODEL_PATH,
@@ -51,4 +46,4 @@ if __name__ == '__main__':
     )
 
     trainer = pl.Trainer(gpus=1, checkpoint_callback=checkpoint_cb)
-    trainer.fit(model, train_dataloader=None, val_dataloaders=None)
+    trainer.fit(model, train_dataloader, val_dataloader)

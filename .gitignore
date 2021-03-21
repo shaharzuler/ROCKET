@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Custom
+lightning_logs
+data
+trained_models
+dataloaders

@@ -1,8 +1,10 @@
 import math
-import torch
 import random
-import torch.nn as nn
+
 import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
 
 
 class RocketNet(pl.LightningModule):
@@ -11,19 +13,17 @@ class RocketNet(pl.LightningModule):
             x_dim: int,
             n_classes: int,
             kernel_count: int,
-            max_sequence_len: int,
-            kernel_lengths: list):
+            max_sequence_len: int, ):
         super(RocketNet, self).__init__()
         self.n_classes = n_classes
         self.kernel_count = kernel_count
         self.feature_dim = 2 * kernel_count
-        self.kernel_len_list = kernel_lengths
+        self.kernel_len_list = [7, 9, 11]
         self.max_sequence_len = max_sequence_len
         # linear classifier
-        self._fc = nn.Linear(self.feature_dim, n_classes)
-        self._softmax = nn.Softmax(dim=1)
-
+        self.fc = nn.Linear(self.feature_dim, n_classes)
         self.conv_list = nn.ModuleList()
+        self.thr = 0.8
 
         # TODO get random weights before conv init
 
@@ -37,12 +37,14 @@ class RocketNet(pl.LightningModule):
 
             dial_core = torch.rand(1) * A
             dial = max(int(torch.floor(dial_core)), 1)
+            padding = random.randint(0, 1)
             cur_conv = nn.Conv1d(
                 in_channels=x_dim,
                 out_channels=1,
                 kernel_size=(1, kernel_len),
                 dilation=dial,
-                stride=stride)
+                stride=stride,
+                padding=padding)
             cur_conv.bias = torch.nn.Parameter(torch.tensor([bias_arr[i]]), requires_grad=False)
             cur_conv.weight = torch.nn.Parameter(torch.empty_like(cur_conv.weight).normal_(), requires_grad=False)
             self.conv_list.append(cur_conv)
@@ -52,39 +54,64 @@ class RocketNet(pl.LightningModule):
         features_2d = []
         for conv_filter in self.conv_list:
             batch_feature_maps = conv_filter(x)
+            if batch_feature_maps.shape[2] != 1:  # pytorch also does padding on the [2] axis (this is unwanted)
+                dim = int(batch_feature_maps.shape[2] / 2)
+                batch_feature_maps = batch_feature_maps[:, :, dim, :].unsqueeze(dim=2)
             global_max = self.get_global_max(batch_feature_maps)
             ppv = self.get_ppv(batch_feature_maps)
             features_2d.append(torch.stack([global_max, ppv], dim=1))
         x = torch.cat(features_2d, dim=1)  # [batch_size, feature_dim]
-        x = self._fc(x)
-        pred = self._softmax(x)
+        x = self.fc(x)
+        pred = torch.sigmoid(x)
         return pred
 
     def get_global_max(self, batch_feature_maps):
         max_pooling = nn.MaxPool2d(batch_feature_maps.shape[2:])
-        return max_pooling(batch_feature_maps).squeeze()
+        mav_vals = max_pooling(batch_feature_maps).squeeze()
+        if len(mav_vals.shape) < 1:  # handle batch size==1
+            mav_vals = mav_vals.unsqueeze(dim=0)
+        return mav_vals
 
     def get_ppv(self, batch_feature_maps):
         batch_feature_maps[batch_feature_maps <= 0] = 0
         ppv = torch.count_nonzero(batch_feature_maps, dim=3) / torch.numel(batch_feature_maps[0, :, :, :])
-        return ppv.squeeze()
+        ppv = ppv.squeeze()
+        if len(ppv.shape) < 1:  # handle batch size==1
+            ppv = ppv.unsqueeze(dim=0)
+        return ppv
 
-    def training_step(self, train_batch):
-        x, y = train_batch
+    def training_step(self, batch, batch_idx):
+        x, y = batch
         pred = self(x)
-        loss = self.loss(pred, y)
+        loss = F.binary_cross_entropy(pred, y)
         self.log('train_loss', loss, on_step=False, on_epoch=True)
         return loss
 
-    def validation_step(self, val_batch):
-        x, y = val_batch
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
         pred = self(x)
-        loss = self.loss(pred, y)
+        loss = F.binary_cross_entropy(pred, y)
+        accuracy = ((pred > self.thr) == y).float().mean()
+        self.log('val_acc', accuracy.item(), prog_bar=True)
         self.log('val_loss', loss, on_step=False, on_epoch=True)
         self.log('learning_rate', self.optim.param_groups[0]["lr"], on_step=False, on_epoch=True)
 
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        scheduler = \
+            {
+                'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.9, patience=2,
+                                                                        threshold=0.0001, cooldown=0, min_lr=1e-7,
+                                                                        eps=1e-08),
+                'monitor': 'val_loss',
+                'interval': 'epoch',
+                'frequency': 1
+            }
+        self.optim = optimizer
+        return [optimizer], [scheduler]
+
 # for i in range(100):
-#     rocket = RocketNet(x_dim=20, n_classes=4, kernel_count=5, max_sequence_len=100, kernel_lengths=[3, 4, 5])
+#     rocket = RocketNet(x_dim=20, n_classes=4, kernel_count=5, max_sequence_len=100, kernel_lengths=[7, 9, 11])
 #     input = torch.randn([30, 20,  100])
 #     probs = rocket(input)
 #     print(probs)
