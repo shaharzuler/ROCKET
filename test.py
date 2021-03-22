@@ -1,13 +1,62 @@
+import os
+import torch
+import random
+import pickle
+import numpy as np
 from model import RocketNet
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+
+CACHED_MODEL = os.path.join("trained_models", "cached_model.pkl")
+TRAIN_DL_PATH = os.path.join("dataloaders", "train_dl.pkl")
+TEST_DL_PATH = os.path.join("dataloaders", "test_dl.pkl")
+
+
+def plot_ts(x_series: np.array, y: int, pred: int):
+    color = "green" if y > 0 else "red"
+    plt.Figure()
+    if len(x_series.shape) > 1:
+        x_series = x_series.squeeze()
+    plt.plot(x_series, c=color)
+    plt.grid()
+    plt.title(f"Real label: {y}, Predicted label: {pred}")
+    plt.show()
+
+
+def predict(model: RocketNet, dataset: DataLoader, index: int):
+    data_sample = dataset[index]
+    x = data_sample[0].unsqueeze(dim=0)
+    y_true = data_sample[1]
+    with torch.no_grad():
+        prob = model(x).item()
+        pred = 1 if prob >= model.thr else 0
+        print(f"model proba: {prob}, model prediction: {pred}, real label: {y_true}")
+        plot_ts(x, y_true, pred)
+    return prob, pred, y_true
+
 
 if __name__ == '__main__':
-    model = RocketNet(
-        x_dim=8,
-        n_classes=2,
-        kernel_count=10000,
-        max_sequence_len=256,
-        kernel_lengths=[7, 9, 11])
+    # get best model
+    if os.path.exists(CACHED_MODEL):
+        with open(CACHED_MODEL, "rb") as fp:
+            model: RocketNet = pickle.load(fp)
+    else:
+        trained_model_list = os.listdir("trained_models")
+        best_model_index = np.argmin([int(name.split("=")[2].split(".")[0]) for name in trained_model_list])
+        TRAINED_MODEL_NAME = os.listdir("trained_models")[best_model_index]
+        TRAINED_MODEL_PATH = os.path.join("trained_models", TRAINED_MODEL_NAME)
+        print(f"loaded model: {TRAINED_MODEL_PATH}")
+        model = RocketNet.load_from_checkpoint(TRAINED_MODEL_PATH)
+        with open(CACHED_MODEL, "wb") as fp:
+            pickle.dump(model, fp)
+    model.eval()
 
-    print(model)
+    # test data
+    with open(TEST_DL_PATH, "rb") as fp:
+        pred_dl = pickle.load(fp)
 
+    pred_dataset = pred_dl.dataset
+    index = random.randint(0, len(pred_dataset))
+    print(f"sampled index: {index}")
 
+    predict(model, pred_dataset, index)

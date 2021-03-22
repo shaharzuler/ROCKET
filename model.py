@@ -1,9 +1,8 @@
 import math
 import random
-
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import pytorch_lightning as pl
 from torch.nn import functional as F
 
 
@@ -12,9 +11,12 @@ class RocketNet(pl.LightningModule):
             self,
             x_dim: int,
             n_classes: int,
+            kernel_seed: int,
             kernel_count: int,
             max_sequence_len: int, ):
         super(RocketNet, self).__init__()
+        self.save_hyperparameters()
+        self.kernel_seed = kernel_seed
         self.n_classes = n_classes
         self.kernel_count = kernel_count
         self.feature_dim = 2 * kernel_count
@@ -25,7 +27,9 @@ class RocketNet(pl.LightningModule):
         self.conv_list = nn.ModuleList()
         self.thr = 0.8
 
-        # TODO get random weights before conv init
+        # set random seed for kernel init
+        random.seed(kernel_seed)
+        torch.manual_seed(kernel_seed)
 
         bias_arr = 2 * (torch.rand(self.kernel_count) - 0.5)
         kernel_lengths_arr = random.choices(self.kernel_len_list, k=kernel_count)
@@ -109,9 +113,3 @@ class RocketNet(pl.LightningModule):
             }
         self.optim = optimizer
         return [optimizer], [scheduler]
-
-# for i in range(100):
-#     rocket = RocketNet(x_dim=20, n_classes=4, kernel_count=5, max_sequence_len=100, kernel_lengths=[7, 9, 11])
-#     input = torch.randn([30, 20,  100])
-#     probs = rocket(input)
-#     print(probs)

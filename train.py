@@ -3,7 +3,7 @@ import pickle
 
 import pytorch_lightning as pl
 
-from ROCKET.DatasetHandler import DatasetHandler
+from DatasetHandler import DatasetHandler
 from model import RocketNet
 from utils import load_data
 
@@ -28,14 +28,16 @@ def save_dataloaders():
 if __name__ == '__main__':
     df_train = load_data(TRAIN_DATA_PATH)
     df_test = load_data(TEST_DATA_PATH)
+    kernel_seed = 42
+    batch_size = 256
     max_sequence_len = 500
-    batch_size = 512
     train_dataloader, val_dataloader = DatasetHandler(df_train, df_test, batch_size).load_dataset()
 
     save_dataloaders()
 
     model = RocketNet(x_dim=1,
                       n_classes=N_CLASSES,
+                      kernel_seed=kernel_seed,
                       kernel_count=KERNEL_COUNT,
                       max_sequence_len=max_sequence_len)
 
@@ -45,5 +47,5 @@ if __name__ == '__main__':
         filename="model-{epoch:02d}-{val_loss:.2f}"
     )
 
-    trainer = pl.Trainer(gpus=1, checkpoint_callback=checkpoint_cb)
+    trainer = pl.Trainer(gpus=0, checkpoint_callback=checkpoint_cb)
     trainer.fit(model, train_dataloader, val_dataloader)
