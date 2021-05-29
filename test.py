@@ -1,11 +1,13 @@
 import os
-import torch
-import random
 import pickle
-import numpy as np
-from model import RocketNet
+import random
+
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from torch.utils.data import DataLoader
+
+from model import RocketNet
 
 CACHED_MODEL = os.path.join("trained_models", "cached_model.pkl")
 TRAIN_DL_PATH = os.path.join("dataloaders", "train_dl.pkl")
@@ -19,7 +21,7 @@ def plot_ts(x_series: np.array, y: int, pred: int):
         x_series = x_series.squeeze()
     plt.plot(x_series, c=color)
     plt.grid()
-    plt.title(f"Real label: {y}, Predicted label: {pred}")
+    plt.title(f"Real label: {int(y.item())}, Predicted label: {pred}")
     plt.show()
 
 
@@ -36,11 +38,11 @@ def predict(model: RocketNet, dataset: DataLoader, index: int):
 
 
 if __name__ == '__main__':
-    # get best model
     if os.path.exists(CACHED_MODEL):
         with open(CACHED_MODEL, "rb") as fp:
             model: RocketNet = pickle.load(fp)
     else:
+        # get model with minimal loss
         trained_model_list = os.listdir("trained_models")
         best_model_index = np.argmin([int(name.split("=")[2].split(".")[0]) for name in trained_model_list])
         TRAINED_MODEL_NAME = os.listdir("trained_models")[best_model_index]
